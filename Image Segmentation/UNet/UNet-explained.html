@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>U-Net, explained step by step</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F2F4F3;--paper-rgb:242,244,243;--panel:#FFFFFF;
+  --ink:#16202A;--ink-rgb:22,32,42;--muted:#56626E;
+  --rule:rgba(22,32,42,.15);--gridline:rgba(22,32,42,.045);
+  --enc:#2A6F97;--enc-rgb:42,111,151;
+  --dec:#B0601A;--dec-rgb:176,96,26;
+  --skip:#7A4FB5;--pool:#B23A52;--ok:#2F7D4F;
+  --serif:"Source Serif 4",Georgia,"Times New Roman",serif;
+  --sans:"Instrument Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#10171E;--paper-rgb:16,23,30;--panel:#17212B;
+    --ink:#E3E9EE;--ink-rgb:227,233,238;--muted:#9AA7B3;
+    --rule:rgba(227,233,238,.16);--gridline:rgba(227,233,238,.035);
+    --enc:#72B3DC;--enc-rgb:114,179,220;
+    --dec:#E59D52;--dec-rgb:229,157,82;
+    --skip:#B690EC;--pool:#EE7D93;--ok:#6CC592;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#10171E;--paper-rgb:16,23,30;--panel:#17212B;
+  --ink:#E3E9EE;--ink-rgb:227,233,238;--muted:#9AA7B3;
+  --rule:rgba(227,233,238,.16);--gridline:rgba(227,233,238,.035);
+  --enc:#72B3DC;--enc-rgb:114,179,220;
+  --dec:#E59D52;--dec-rgb:229,157,82;
+  --skip:#B690EC;--pool:#EE7D93;--ok:#6CC592;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{
+  margin:0;background:var(--paper);color:var(--ink);
+  font-family:var(--serif);font-size:18px;line-height:1.62;
+  background-image:linear-gradient(var(--gridline) 1px,transparent 1px),linear-gradient(90deg,var(--gridline) 1px,transparent 1px);
+  background-size:24px 24px;
+}
+main{max-width:1100px;margin:0 auto;padding:48px 24px 96px}
+.prose{max-width:68ch}
+h1{font-size:clamp(2.2rem,5vw,3.6rem);line-height:1.05;font-weight:700;letter-spacing:-.02em;margin:0 0 .4em;max-width:18ch}
+h2{font-size:1.75rem;line-height:1.2;margin:0 0 .6em;font-weight:700;letter-spacing:-.01em;display:flex;gap:.6em;align-items:baseline}
+h2 .n{font-family:var(--sans);font-size:1rem;font-weight:600;min-width:2.2em;height:2.2em;border-radius:50%;display:inline-grid;place-items:center;border:1.5px solid currentColor;flex:none;transform:translateY(-.15em)}
+h2.enc .n{color:var(--enc)} h2.dec .n{color:var(--dec)} h2.neu .n{color:var(--muted)}
+h3{font-family:var(--sans);font-size:1rem;font-weight:600;margin:1.6em 0 .4em}
+p{margin:0 0 1em}
+.lede{font-size:1.2rem;color:var(--muted);max-width:60ch}
+section{margin-top:88px}
+a{color:var(--enc)}
+b,strong{font-weight:600}
+.enc-t{color:var(--enc);font-weight:600}.dec-t{color:var(--dec);font-weight:600}.skip-t{color:var(--skip);font-weight:600}.pool-t{color:var(--pool);font-weight:600}
+.eq{font-family:var(--serif);font-size:1.12rem;background:var(--panel);border-left:3px solid var(--rule);padding:14px 18px;margin:1em 0 1.2em;overflow-x:auto;white-space:nowrap;border-radius:0 6px 6px 0}
+.eq i{font-style:italic}
+.eq .c{font-family:var(--sans);font-size:.82rem;color:var(--muted);white-space:normal;display:block;margin-top:6px}
+.eq.enc{border-color:var(--enc)} .eq.dec{border-color:var(--dec)} .eq.skip{border-color:var(--skip)} .eq.pool{border-color:var(--pool)}
+.key{background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:16px 20px;margin:1.4em 0;font-size:1rem}
+.key strong{font-family:var(--sans);font-size:.9rem;display:block;margin-bottom:4px}
+figure{margin:1.6em 0 2em;background:var(--panel);border:1px solid var(--rule);border-radius:14px;padding:20px}
+figcaption{font-family:var(--sans);font-size:.88rem;color:var(--muted);margin-top:14px;line-height:1.5}
+.ui{font-family:var(--sans);font-size:.9rem}
+button,.btn{font-family:var(--sans);font-size:.88rem;background:transparent;color:var(--ink);border:1px solid var(--rule);border-radius:999px;padding:6px 14px;cursor:pointer}
+button:hover{border-color:var(--ink)}
+button[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+button:focus-visible,[tabindex]:focus-visible,input:focus-visible{outline:2px solid var(--enc);outline-offset:2px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.toc{font-family:var(--sans);font-size:.92rem;display:flex;flex-wrap:wrap;gap:6px 18px;margin:28px 0 0;padding:0;list-style:none;color:var(--muted)}
+.toc a{color:inherit;text-decoration:none;border-bottom:1px solid var(--rule)}
+.toc a:hover{color:var(--ink)}
+/* hero diagram */
+.scroll-x{overflow-x:auto}
+#unet{min-width:780px;width:100%;height:auto;display:block}
+#unet text{font-family:var(--sans);fill:var(--ink)}
+#unet .lbl{font-size:12px;fill:var(--muted)}
+#unet .blk{cursor:pointer}
+#unet .blk rect.b{transition:stroke-width .15s}
+#unet .blk:hover rect.b,#unet .blk.on rect.b{stroke:var(--ink);stroke-width:2.5}
+#unet .arr{cursor:pointer}
+#unet .arr .hit{stroke:transparent;stroke-width:16;fill:none}
+#unet .arr:hover .vis,#unet .arr.on .vis{stroke-width:3.2}
+#detail{display:grid;grid-template-columns:minmax(0,1fr);gap:4px;margin-top:16px;border-top:1px solid var(--rule);padding-top:16px;min-height:170px}
+#detail h4{font-family:var(--sans);font-size:1.05rem;margin:0}
+#detail .meta{font-family:var(--sans);font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 20px;margin:2px 0 8px}
+#detail p{font-size:1rem;margin:0 0 .5em;max-width:78ch}
+/* grids */
+.cells{display:grid;gap:2px;--c:32px}
+.cell{width:var(--c);height:var(--c);display:grid;place-items:center;font-family:var(--sans);font-size:.7rem;border-radius:3px;background:rgba(var(--ink-rgb),.06);color:var(--ink);user-select:none}
+.cell.hl{outline:2px solid var(--pool);outline-offset:-1px}
+.cell.sel{outline:2.5px solid var(--ink);outline-offset:-1px}
+.cell.click{cursor:pointer}
+.op{font-family:var(--serif);font-size:1.6rem;color:var(--muted);padding:0 4px}
+.stage{display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:flex-start}
+.stage .lab{font-family:var(--sans);font-size:.78rem;color:var(--muted);margin-bottom:6px}
+.calc{font-family:var(--sans);font-size:.9rem;margin-top:16px;display:flex;flex-wrap:wrap;gap:16px;align-items:center}
+.calc .res{font-size:.95rem}
+canvas.px{image-rendering:pixelated;image-rendering:crisp-edges;width:100%;height:auto;display:block;border-radius:6px;border:1px solid var(--rule)}
+.pair{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-top:18px}
+.pair .lab{font-family:var(--sans);font-size:.8rem;color:var(--muted);margin-bottom:6px}
+.split{display:grid;grid-template-columns:minmax(0,320px) minmax(0,1fr);gap:24px;align-items:start}
+@media (max-width:720px){.split{grid-template-columns:minmax(0,1fr)} .cells{--c:26px} body{font-size:17px}}
+.stat{font-family:var(--sans);font-size:.92rem}
+.stat dt{color:var(--muted);font-size:.8rem;margin-top:10px}
+.stat dd{margin:0;font-weight:600}
+input[type=range]{width:100%;accent-color:var(--ink)}
+.slider{font-family:var(--sans);font-size:.85rem;display:grid;grid-template-columns:auto 1fr 3.2em;gap:10px;align-items:center;margin:6px 0}
+.bars{font-family:var(--sans);font-size:.85rem;margin-top:8px}
+.bar{display:grid;grid-template-columns:7.5em 1fr 3.4em;gap:8px;align-items:center;margin:4px 0}
+.bar .t{height:12px;background:rgba(var(--ink-rgb),.08);border-radius:6px;overflow:hidden}
+.bar .t span{display:block;height:100%;border-radius:6px}
+table{border-collapse:collapse;font-family:var(--sans);font-size:.86rem;width:100%}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--rule);white-space:nowrap}
+th{color:var(--muted);font-weight:500}
+td.e{color:var(--enc)} td.d{color:var(--dec)} td.s{color:var(--skip)}
+.swatch{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:middle}
+table.trace{width:fit-content;max-width:100%;margin:1em 0 1.4em;font-size:.9rem;background:var(--panel);border-left:3px solid var(--rule);border-radius:0 8px 8px 0;display:block;overflow-x:auto}
+table.trace th,table.trace td{white-space:normal;padding:7px 14px;vertical-align:top}
+table.trace tr:last-child td{border-bottom:0}
+table.trace tr.sh td{color:var(--pool)}
+td.ok{color:var(--ok);font-weight:600} td.bad{color:var(--pool);font-weight:600}
+.wg{display:grid;grid-template-columns:190px repeat(8,minmax(46px,1fr));gap:3px;min-width:600px;font-family:var(--sans);font-size:.85rem}
+.wg .l{padding:6px 8px 6px 0;color:var(--muted);align-self:center}
+.wg .v{padding:7px 2px;text-align:center;border-radius:4px;background:rgba(var(--ink-rgb),.05);cursor:pointer;border:2px solid transparent}
+.wg .v.col{border-color:var(--ink)}
+.wg .v.use{border-color:var(--pool)}
+.wg .l.new{color:var(--ink);font-weight:600}
+.wg .hdr{background:transparent;font-weight:600}
+.wg .stk{box-shadow:inset 0 0 0 2px var(--ok)}
+.tabbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;display:flex;gap:6px;overflow-x:auto;padding:12px 0;margin:8px 0 0;background:var(--paper);border-bottom:1px solid var(--rule);scrollbar-width:thin}
+.tabbar button{white-space:nowrap;flex:none}
+.tabbar button[aria-selected="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+main>section{margin-top:36px}
+main>section[hidden]{display:none}
+.pager{display:flex;justify-content:space-between;gap:12px;margin-top:48px;padding-top:20px;border-top:1px solid var(--rule)}
+.pager button{padding:10px 18px;font-size:.95rem}
+.openbtn{margin-top:6px;justify-self:start}
+.flow{display:flex;flex-direction:column;align-items:flex-start;margin:1.2em 0 1.6em;font-family:var(--sans);font-size:.92rem}
+.flow .st{background:var(--panel);border:1.5px solid var(--rule);border-radius:8px;padding:8px 14px;font-weight:600}
+.flow .st span{display:block;font-weight:400;color:var(--muted);font-size:.82rem}
+.flow .st.dec{border-color:var(--dec)} .flow .st.skip{border-color:var(--skip)} .flow .st.enc{border-color:var(--enc)}
+.flow .ar{color:var(--muted);padding:6px 0 6px 16px}
+.summary ol{padding-left:1.2em;max-width:68ch}
+.summary li{margin-bottom:.6em}
+.hint{font-family:var(--sans);font-size:.82rem;color:var(--muted)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <h1>U-Net, explained step by step</h1>
+  <p class="lede">U-Net gives every pixel of an image a label, such as "tumour" or "background". For each pixel it has to answer two questions: <em>what object is this?</em> and <em>where exactly is the object's border?</em> The left half of the U answers the first question. The right half answers the second. Click any block or arrow in the diagram to read what happens there.</p>
+</header>
+<nav class="tabbar" role="tablist" aria-label="Sections"><button role="tab" data-t="overview" aria-selected="false">Overview</button><button role="tab" data-t="task" aria-selected="false">1. The task</button><button role="tab" data-t="conv" aria-selected="false">2. Filters</button><button role="tab" data-t="pool" aria-selected="false">3. Shrinking</button><button role="tab" data-t="neck" aria-selected="false">4. Decoder input</button><button role="tab" data-t="up" aria-selected="false">5. Enlarge</button><button role="tab" data-t="skip" aria-selected="false">6. Add spatial info</button><button role="tab" data-t="worked" aria-selected="false">7. Worked example</button><button role="tab" data-t="head" aria-selected="false">8. Pixel prediction</button><button role="tab" data-t="learn" aria-selected="false">9. Training</button><button role="tab" data-t="table" aria-selected="false">10. Summary</button></nav>
+<section id="overview">
+<h2 class="neu">The U-Net at a glance</h2>
+
+<figure>
+  <div class="scroll-x"><svg id="unet" viewBox="0 0 1120 570" role="img" aria-label="Interactive U-Net diagram"></svg></div>
+  <div id="detail" aria-live="polite"></div>
+  <figcaption>Example used on this page: a 256×256 black-and-white image, with 2 classes (object and background). A taller block means a bigger grid. A wider block means more maps.</figcaption>
+</figure>
+<div class="key"><strong>How to read the sizes on this page</strong>
+"128×128, 128 maps" means 128 grids, each 128 cells wide and 128 cells tall. One map is one grid of numbers. It is made by one filter and shows where that filter found its feature (for example a vertical edge). Going down the U, each grid gets smaller and the number of maps gets bigger.</div>
+
+<p class="hint">Start with tab 1 and use Next at the bottom of each tab, or jump to any tab above.</p>
+</section>
+
+
+<section id="task">
+<h2 class="neu"><span class="n">1</span>The task: a label for every pixel</h2>
+<div class="prose">
+<p>A classifier looks at a whole image and says one word: "cat". Segmentation is harder. We have to say, for <em>every single pixel</em>, which class it belongs to.</p>
+<h3>First idea: just look at each pixel's brightness?</h3>
+<p>Take our example image: a bright circle (the object), an equally bright square (not the object), and a dark background. Suppose our rule is "bright pixel = object".</p>
+</div>
+<table class="trace">
+<tr><th>Pixel</th><th>Brightness</th><th>Rule says</th><th>Truth</th></tr>
+<tr><td>inside circle</td><td>0.85</td><td>object</td><td class="ok">object ✔</td></tr>
+<tr><td>background</td><td>0.20</td><td>background</td><td class="ok">background ✔</td></tr>
+<tr><td>inside square</td><td>0.85</td><td>object</td><td class="bad">background ✘</td></tr>
+</table>
+<div class="prose"><p>But hold on, the square isn't the object! Both pixels have exactly the same brightness, so no rule that looks at one pixel can ever tell them apart. The only difference is the <em>shape around them</em>: one sits inside something round, the other inside something square.</p></div>
+<figure>
+  <div class="pair" style="grid-template-columns:repeat(auto-fit,minmax(150px,220px));margin-top:0;align-items:end">
+    <div><div class="lab">What goes in: brightness values</div><canvas class="px" id="t0" width="24" height="24"></canvas></div>
+    <div class="op" style="text-align:center;align-self:center">→</div>
+    <div><div class="lab">What must come out: a class per pixel</div><canvas class="px" id="t1" width="24" height="24"></canvas></div>
+  </div>
+  <figcaption>The circle is the object. The square is equally bright but is background. To tell them apart, the network must look at the shape around each pixel, not only the pixel itself.</figcaption>
+</figure>
+<div class="prose">
+<h3>Second idea: look at a big area around every pixel?</h3>
+<p>Yes, that fixes the square problem. U-Net does this by <b>shrinking</b> the image in steps. After shrinking, one cell stands for a block of many pixels, so a feature map covers a large part of the image.</p>
+<p>But shrinking has a cost: a small grid cannot store the exact position of the circle's border. So we need a small grid to recognise the object, and a full-size grid to draw its border. U-Net uses both:</p>
+</div>
+<div class="key"><strong>The whole idea in two lines</strong>
+<span class="enc-t">Encoder</span> (left side of the U): shrinks the image step by step to recognise <em>what</em> is in it. Exact positions are lost.<br>
+<span class="dec-t">Decoder</span> (right side): receives these feature-rich maps and enlarges them. Enlarging alone can't recover exact positions, so at each size it takes spatial information from the encoder's saved maps (<span class="skip-t">skip connections</span>) and combines both into new maps. The last maps give the mask.</div>
+</section>
+
+<section id="conv">
+<h2 class="enc"><span class="n">2</span>Filters: what a feature really is</h2>
+<div class="prose">
+<p>"The encoder extracts features". But what is a feature, actually? Let's decode it.</p>
+<p>A <b>filter</b> is a small grid of weights. For example, a filter for <b>vertical edge</b> (given in figure below): negative weights on the left column, zero in the middle, positive on the right. Place it on 3×3 pixels, multiply each pixel by the weight on top of it, and add everything up.</p>
+</div>
+<div class="prose">
+<p>So the result is a <b>match score</b>: it is high when the pixels match what the filter looks for. Now slide the filter over every position and write down the score each time. The grid of scores is a <b>feature map</b>.</p>
+<p>Therefore, a feature map is not a picture of the image. It is a <em>map of where one filter found its feature</em>. After that, a step called ReLU changes every negative score to 0. Then the map only shows where the feature is.</p>
+<p>Hover over (or tab to) any output cell to see the 9 pixels it used.</p>
+</div>
+<figure>
+  <div class="row" id="kbtns" role="group" aria-label="Choose a kernel"></div>
+  <div class="stage" style="margin-top:18px">
+    <div><div class="lab">Input patch 8×8</div><div class="cells" id="cin"></div></div>
+    <div class="op ui" style="font-size:.85rem">slide<br>filter<br>over →</div>
+    <div><div class="lab">Filter (3×3 weights)</div><div class="cells" id="ck"></div></div>
+    <div class="op ui" style="font-size:.85rem">gives →</div>
+    <div><div class="lab" id="coutlab">Output feature map 8×8</div><div class="cells" id="cout"></div></div>
+  </div>
+  <div class="calc">
+    <div><div class="hint" style="margin-bottom:6px">Filter weight × pixel, under the window</div><div class="cells" id="cprod" style="--c:44px"></div></div>
+    <div class="res" id="cres"></div>
+  </div>
+  <div class="row" style="margin-top:14px"><label class="ui"><input type="checkbox" id="relu" checked> Keep only positive matches (ReLU)</label></div>
+  <div class="pair" style="max-width:620px">
+    <div><div class="lab">Same filter slid over a full scene</div><canvas class="px" id="scene" width="96" height="96"></canvas></div>
+    <div><div class="lab" id="fmaplab">Resulting feature map (bright = feature found)</div><canvas class="px" id="fmap" width="96" height="96"></canvas></div>
+  </div>
+  <figcaption>Orange means the feature was found, blue means its opposite was found. The vertical-edge filter gives a high score only where the image goes from dark to bright, left to right. So it marks the left side of the square, not the right side. In a real network, the 64 filters of the first layer are learned during training.</figcaption>
+</figure>
+<h3>But these are only edges. How do we get to "circle"?</h3>
+<div class="prose">
+<p>The first layer has 64 filters, so it makes 64 maps. The second layer does not look at pixels. Its filters are slid over those 64 maps. So a second-layer filter can check, for example, "horizontal edge above, vertical edge on the left". That combination is a corner. Each layer builds on the maps of the layer before:</p>
+</div>
+<table class="trace">
+<tr><th>Level</th><th>Its filters read</th><th>So it finds</th></tr>
+<tr><td>1</td><td>pixels</td><td>edges, light-dark steps, spots</td></tr>
+<tr><td>2</td><td>edges</td><td>corners, line ends, fine textures</td></tr>
+<tr><td>3</td><td>corners and textures</td><td>curved pieces of outline</td></tr>
+<tr><td>4</td><td>curves</td><td>parts of shapes</td></tr>
+<tr><td>bottom</td><td>shape parts</td><td>"inside a round object"</td></tr>
+</table>
+<div class="prose"><p>These filters are not written by hand. They are learned during training.</p></div>
+</section>
+
+<section id="pool">
+<h2 class="enc"><span class="n">3</span>Shrinking (max pooling): what do we lose?</h2>
+<div class="prose">
+<p>Shrinking halfs each map. Take one block:</p>
+</div>
+<table class="trace">
+<tr><th>Block values</th><th>Kept</th></tr>
+<tr><td>1, 3, 4, <b>9</b></td><td>9</td></tr>
+<tr><td><b>9</b>, 3, 4, 1</td><td>9</td></tr>
+<tr><td>1, <b>9</b>, 4, 3</td><td>9</td></tr>
+</table>
+<div class="prose">
+<p>But hold on, the 9 was in a different place each time and the result didn't change! After shrinking, the network knows <em>"the feature was found somewhere in this block"</em> but not <em>where in the block</em>.</p>
+<h3>Is that bad?</h3>
+<p>For <em>what</em>, it is fine: the network only needs to know that the feature is present. For <em>where</em>, it is a loss. Each shrink doubles the uncertainty: after 1 shrink the position is known to within 2 pixels, then 4, then 8, and after 4 shrinks only to within 16 pixels.</p>
+<p>Click a cell to move the 9 around and watch the small map.</p>
+</div>
+<figure>
+  <div class="stage">
+    <div><div class="lab">One feature map (4×4). Click to move the detection</div><div class="cells" id="pin" style="--c:44px"></div></div>
+    <div class="op">→</div>
+    <div><div class="lab">After pooling (2×2)</div><div class="cells" id="pout" style="--c:44px"></div></div>
+  </div>
+  <p class="hint" id="pmsg" style="margin-top:14px"></p>
+  <figcaption>All four positions inside a block give the same result, so the exact position is lost.</figcaption>
+</figure>
+</section>
+
+<section id="neck">
+<h2 class="enc"><span class="n">4</span>What the decoder receives</h2>
+<div class="prose">
+<p>The encoder hands its final maps to the decoder: <b>16×16, 1024 channels</b>. At each of the 16×16 locations there are 1024 numbers describing what is there, for example "part of a round object".</p>
+<p>These maps are <b>feature-rich</b> but <b>spatially poor</b>:</p>
+</div>
+<table class="trace">
+<tr><th>Rich in</th><th>Poor in</th></tr>
+<tr><td><em>what</em> is in each region</td><td><em>where</em> exactly it is</td></tr>
+</table>
+<div class="prose"><p>Why spatially poor? Count the locations:</p></div>
+<table class="trace">
+<tr><th>Grid</th><th>Locations</th><th>Each location stands for</th></tr>
+<tr><td>input, 256×256</td><td>65,536</td><td>1 pixel</td></tr>
+<tr><td>decoder input, 16×16</td><td>256</td><td>256 pixels</td></tr>
+</table>
+<div class="prose">
+<p>A location(single cell) knows its original block (of 256 pixels) contains part of the circle, but not which of its 256 pixels do.</p>
+<h3>Why not make the mask directly from these maps?</h3>
+<p>We could label each of the 256 locations and stretch the result to full size. But we need pixel prediction on original image input. </p>
+</div>
+<div class="prose"><p>So the decoder does two things, over and over:</p>
+<ol><li><b>Enlarge</b> the feature-rich maps (tab 5).</li><li><b>Take spatial information from the encoder</b> and combine it with them (tab 6).</li></ol></div>
+</section>
+
+<section id="up">
+<h2 class="dec"><span class="n">5</span>Step 1: enlarge the maps</h2>
+<div class="flow">
+  <div class="st dec">16×16, 1024 maps <span>feature-rich, spatially poor</span></div>
+  <div class="ar">↓ enlarge</div>
+  <div class="st dec">32×32, 512 maps <span>same information, bigger grid</span></div>
+</div>
+<div class="prose">
+<h3>How one cell is enlarged</h3>
+<p>Each cell becomes 2×2 = 4 cells. Each new value is the old value multiplied by one of 4 learned weights.</p>
+</div>
+<table class="trace">
+<tr><th>Old value</th><th>4 weights</th><th>4 new values</th></tr>
+<tr><td>2</td><td>1, 1, 1, 1</td><td>2, 2, 2, 2 <span class="hint">(plain copy)</span></td></tr>
+<tr><td>2</td><td>0.1, 0.4, 0.4, 1</td><td>0.2, 0.8, 0.8, 2 </td></tr>
+</table>
+<figure>
+  <div class="row" id="ubtns" role="group" aria-label="Choose upsampling weights"></div>
+  <div class="stage" style="margin-top:16px">
+    <div><div class="lab">Coarse input (2×2). Click to change</div><div class="cells" id="uin" style="--c:48px"></div></div>
+    <div class="op ui" style="font-size:.85rem">multiply<br>each cell<br>by →</div>
+    <div><div class="lab">Learned weights (2×2)</div><div class="cells" id="uk" style="--c:48px"></div></div>
+    <div class="op ui" style="font-size:.85rem">gives →</div>
+    <div><div class="lab">Upsampled (4×4)</div><div class="cells" id="uout" style="--c:48px"></div></div>
+  </div>
+  <figcaption>Hover an input cell to see the 2×2 block it produces. Each 2×2 block is the input value multiplied by the 4 weights.</figcaption>
+</figure>
+<div class="prose">
+<h3>Why enlarge?</h3>
+<p>Two reasons. 1. The mask must end at 256×256 (original image size). 2. Decoder stacks these maps with the encoder's 32×32 maps, which is only possible when both grids are the same size.</p>
+<h3>Is enlarging enough?</h3>
+<p>No. The same 4 weights are used for every cell of every image, so they cannot know spatial information in <em>this</em> image. The enlarged maps still know <em>what</em>, but the <em>where</em> is still blocky.</p>
+<p>The missing spatial information must come from somewhere else - and comes from encoder.</p>
+</div>
+</section>
+
+<section id="skip">
+<h2 class="dec"><span class="n">6</span>Step 2: take spatial information from the encoder</h2>
+<div class="prose">
+<p>Before each shrink, the encoder saved its maps. The saved 32×32 maps were made before any further shrinking, so they still hold spatial information of this level. They are sent to the decoder through the <span class="skip-t">skip connection</span>.</p>
+</div>
+<table class="trace">
+<tr><th></th><th class="dec-t">Enlarged decoder maps</th><th class="skip-t">Saved encoder maps</th></tr>
+<tr><td>Know <em>what</em> is here</td><td class="ok">yes</td><td class="bad">no</td></tr>
+<tr><td>Know <em>where</em> exactly</td><td class="bad">no (blocky)</td><td class="ok">yes (exact edges)</td></tr>
+</table>
+<div class="prose"><p>Each has what the other lacks. So they are combined:</p></div>
+<div class="flow">
+  <div class="row" style="gap:10px;align-items:stretch">
+    <div class="st dec">Enlarged decoder maps<br>32×32, 512 <span>what</span></div>
+    <div class="ar" style="align-self:center">+</div>
+    <div class="st skip">Saved encoder maps<br>32×32, 512 <span>where</span></div>
+  </div>
+  <div class="ar">↓ stack</div>
+  <div class="st">32×32, 1024 maps <span>both, side by side</span></div>
+  <div class="ar">↓ 3×3 filters combine them</div>
+  <div class="st dec">32×32, 512 <b>new</b> maps <span>what + where</span></div>
+</div>
+<div class="prose">
+<h3>Stack</h3>
+<p>The two sets are placed side by side. At one location: 512 numbers from the decoder + 512 from the encoder = 1024 numbers. Nothing is calculated yet.</p>
+</div>
+<figure>
+  <svg viewBox="0 0 760 230" style="width:100%;height:auto;display:block" role="img" aria-label="Stacking skip maps with upsampled maps">
+    <g font-family="Instrument Sans, sans-serif" font-size="13">
+      <g id="stackS"></g><g id="stackU"></g><g id="stackZ"></g><g id="stackO"></g>
+      <text x="108" y="210" text-anchor="middle" style="fill:var(--skip)" font-weight="600">Saved encoder maps</text>
+      <text x="108" y="226" text-anchor="middle" style="fill:var(--muted)">exact edges, no object</text>
+      <text x="108" y="18" text-anchor="middle" style="fill:var(--dec)" font-weight="600">Enlarged decoder maps</text>
+      <text x="108" y="34" text-anchor="middle" style="fill:var(--muted)">knows object, blocky border</text>
+      <text x="215" y="125" style="fill:var(--muted)" font-size="22">→</text>
+      <text x="340" y="210" text-anchor="middle" style="fill:var(--ink)" font-weight="600">One combined stack</text>
+      <text x="340" y="226" text-anchor="middle" style="fill:var(--muted)">decoder maps + encoder maps</text>
+      <text x="455" y="115" style="fill:var(--muted)" font-size="13">combined by</text>
+      <text x="455" y="131" style="fill:var(--muted)" font-size="13">3×3 filters</text>
+      <text x="470" y="152" style="fill:var(--muted)" font-size="22">→</text>
+      <text x="660" y="210" text-anchor="middle" style="fill:var(--dec)" font-weight="600">New decoder maps</text>
+      <text x="660" y="226" text-anchor="middle" style="fill:var(--muted)">object + exact border</text>
+    </g>
+  </svg>
+  <figcaption>Stacking only places the maps side by side. They are combined in step 2.</figcaption>
+</figure>
+<div class="prose">
+<h3>Combine with filters</h3>
+<p>3×3 filters slide over the stacked maps. At each location, one filter multiplies all 1024 numbers at a cell by its corresponding learned weight, adds them into one number, and sets negatives to 0. There are 512 filters, so the result is 512 <b>new</b> feature maps.</p>
+<p> These weights are learned by making mask at last level, then finding loss and then updating all weights in decoders. </p>
+<p>The weights decide how <em>what</em> and <em>where</em> are mixed. For example, a filter can learn to give a high value only where the decoder maps say "object nearby" <em>and</em> the encoder maps say "edge exactly here". That marks the true border pixel.</p>
+<h3>Repeat until full size</h3>
+</div>
+<table class="trace">
+<tr><th>Decoder block</th><th>Enlarge to</th><th>Spatial information from</th><th>Border exact to</th></tr>
+<tr><td>1</td><td>32×32</td><td>encoder level 4</td><td>8 pixels</td></tr>
+<tr><td>2</td><td>64×64</td><td>encoder level 3</td><td>4 pixels</td></tr>
+<tr><td>3</td><td>128×128</td><td>encoder level 2</td><td>2 pixels</td></tr>
+<tr><td>4</td><td>256×256</td><td>encoder level 1 (edges)</td><td>1 pixel</td></tr>
+</table>
+<div class="prose"><p>The last block outputs <b>256×256, 64 maps</b>. Every location now has 64 numbers that know both what and where. Now mask is generated for the image. </p></div>
+</section>
+
+
+
+<section id="worked">
+<h2 class="dec"><span class="n">7</span>Worked example: from maps to the final answer</h2>
+<div class="prose">
+<p>The decoder path with real numbers: one row of 8 pixels, 2 saved encoder maps, 1 decoder map, one combining filter and one final score. The real network does the same steps with more pixels and maps.</p>
+<p>Press <b>Next</b> to go one step at a time. Click any pixel column to see its own calculation.</p>
+</div>
+<figure>
+  <div class="row"><button id="wbk">Back</button><button id="wnx">Next</button><span class="ui" id="wct" style="color:var(--muted)"></span></div>
+  <h4 class="ui" id="wtitle" style="font-size:1.05rem;margin:16px 0 6px"></h4>
+  <p id="wtext" style="font-size:1rem;margin:0 0 14px;max-width:78ch"></p>
+  <div class="scroll-x"><div id="wgrid"></div></div>
+  <div id="wcalc" class="ui" style="margin-top:14px"></div>
+  <figcaption>Violet rows: saved encoder maps (sent through the skip connection). Orange rows: the deep path and the decoder. The weights here were chosen by hand to keep the numbers simple. In a real network they are learned.</figcaption>
+</figure>
+<div class="prose">
+<h3>What happened</h3>
+<p>The enlarged decoder map knew which region is the object, but its border was stuck at the edge of a 4-pixel block, so it missed pixel 4. The saved edge map knew exactly where brightness jumps, but it also reacted to the speck at pixel 2.</p>
+<p>The combining filter added the decoder map, the edge map and the brightness of the next pixel into one sum. Pixel 4 has an edge and a bright pixel after it, so its sum is above zero. Pixel 2 has an edge but a dark pixel after it, so its sum is below zero. Then the final score turned each value into a percentage.</p>
+</div>
+</section>
+
+<section id="head">
+<h2 class="dec"><span class="n">8</span>Pixel prediction: from 64 numbers to the mask</h2>
+<div class="prose">
+<p>The last decoder block outputs 256×256 locations, each with 64 numbers. Location (x, y) matches pixel (x, y). These 64 numbers do not say "object" directly; they are the information needed to decide it.</p>
+<h3>Step 1: one score per location</h3>
+<p>Multiply the 64 numbers by 64 learned weights and add them up, plus a fixed number. The same weights are used at every location. (This is a 1×1 filter: a filter that looks at one location only.)</p>
+<h3>Step 2: score to probability</h3>
+<p>The score is squeezed into a probability between 0% and 100% (with a function called sigmoid):</p>
+</div>
+<table class="trace">
+<tr><th>Score</th><th>−4</th><th>−2</th><th>0</th><th>+2</th><th>+4</th></tr>
+<tr><td>Probability of object</td><td>2%</td><td>12%</td><td>50%</td><td>88%</td><td>98%</td></tr>
+</table>
+<div class="prose">
+<h3>Step 3: label</h3>
+<p>Above 50% → object, otherwise background. Doing this at all 65,536 locations gives the mask.</p>
+<h3>Our two pixels from tab 1</h3>
+<p>Using 3 of the 64 numbers, with weights object score = 8 × context + 0.5 × edge + 0.5 × brightness − 4.5:</p>
+</div>
+<table class="trace">
+<tr><th>Pixel</th><th>Context</th><th>Edge</th><th>Brightness</th><th>Score</th><th>Probability</th><th>Label</th></tr>
+<tr><td>inside circle</td><td>1.0</td><td>0</td><td>0.85</td><td>8 + 0 + 0.43 − 4.5 = <b>3.9</b></td><td>98%</td><td class="ok">object ✔</td></tr>
+<tr><td>inside square</td><td>0.0</td><td>0</td><td>0.85</td><td>0 + 0 + 0.43 − 4.5 = <b>−4.1</b></td><td>2%</td><td class="ok">background ✔</td></tr>
+</table>
+<div class="prose">
+<p>The scoring is simple. It works only because the decoder already put the right numbers into each location. Without context, both pixels would get the same score, and one would be wrong.</p>
+<h3>More than two classes</h3>
+<p>With cat, dog and background, the network computes 3 scores per location, each with its own 64 weights. The scores become percentages that add up to 100% (with a function called softmax), and the highest wins:</p>
+</div>
+<table class="trace">
+<tr><th>Class</th><th>Score</th><th>Percentage</th></tr>
+<tr><td>cat</td><td>2.8</td><td><b>90%</b> ← label</td></tr>
+<tr><td>dog</td><td>0.4</td><td>8%</td></tr>
+<tr><td>background</td><td>−1.2</td><td>2%</td></tr>
+</table>
+<div class="prose"><p>Click any pixel below. Tick the box to remove context and watch the square become "object".</p></div>
+<figure>
+  <div class="pair" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr));margin-top:0">
+    <div><div class="lab">Input image</div><canvas class="px hc" id="h0" width="24" height="24"></canvas></div>
+    <div><div class="lab">Context (from the deep path)</div><canvas class="px hc" id="h1" width="24" height="24"></canvas></div>
+    <div><div class="lab">Edge (from the skip path)</div><canvas class="px hc" id="h2" width="24" height="24"></canvas></div>
+    <div><div class="lab">Brightness</div><canvas class="px hc" id="h3" width="24" height="24"></canvas></div>
+    <div><div class="lab">Output: chance of object</div><canvas class="px hc" id="h4" width="24" height="24"></canvas></div>
+  </div>
+  <div class="row" style="margin-top:14px"><label class="ui"><input type="checkbox" id="ablate"> Take away the context map (as if the network had no deep bottom part)</label></div>
+  <div id="hcalc" class="ui" style="margin-top:16px;max-width:640px"></div>
+  <figcaption>The small pictures show the numbers each pixel has: context, edge and brightness. The last picture is the result: the chance of being object for every pixel.</figcaption>
+</figure>
+</section>
+
+
+<section id="learn">
+<h2 class="neu"><span class="n">9</span>Training: where the weights come from</h2>
+<div class="prose"><p>All the weights on this page (filters, enlarging weights, final scores) start as random numbers. They are improved by repeating this loop over many images:</p></div>
+<figure>
+  <svg viewBox="0 0 760 170" style="width:100%;height:auto;display:block" role="img" aria-label="Training loop">
+    <g font-family="Instrument Sans, sans-serif" font-size="13" style="fill:var(--ink)">
+      <rect x="10" y="55" width="130" height="60" rx="8" fill="none" style="stroke:var(--rule)"/><text x="75" y="82" text-anchor="middle">1. Predict</text><text x="75" y="99" text-anchor="middle" style="fill:var(--muted)" font-size="12">a mask</text>
+      <rect x="200" y="55" width="150" height="60" rx="8" fill="none" style="stroke:var(--rule)"/><text x="275" y="82" text-anchor="middle">2. Compare each pixel</text><text x="275" y="99" text-anchor="middle" style="fill:var(--muted)" font-size="12">with the true mask</text>
+      <rect x="410" y="55" width="150" height="60" rx="8" fill="none" style="stroke:var(--rule)"/><text x="485" y="82" text-anchor="middle">3. Send the error back</text><text x="485" y="99" text-anchor="middle" style="fill:var(--muted)" font-size="12">through every layer</text>
+      <rect x="620" y="55" width="130" height="60" rx="8" fill="none" style="stroke:var(--rule)"/><text x="685" y="82" text-anchor="middle">4. Adjust weights</text><text x="685" y="99" text-anchor="middle" style="fill:var(--muted)" font-size="12">to reduce the error</text>
+      <path d="M140,85 H196 M350,85 H406 M560,85 H616" style="stroke:var(--ink)" stroke-width="1.5" fill="none"/>
+      <path d="M685,115 V150 H75 V119" style="stroke:var(--muted)" stroke-width="1.5" fill="none" stroke-dasharray="5 4"/>
+      <text x="380" y="165" text-anchor="middle" style="fill:var(--muted)" font-size="12">repeat on the next image</text>
+    </g>
+  </svg>
+</figure>
+<div class="prose"><p>In step 2, each pixel gets a penalty. The penalty is small when the correct class got a high percentage, and large when it got a low percentage. Drag the slider to see it.</p></div>
+<figure>
+  <div class="slider"><span>Confidence in the correct class</span><input type="range" id="lp" min="0.01" max="0.99" step="0.01" value="0.3"><span id="lpv">30%</span></div>
+  <div class="bars"><div class="bar"><span>Penalty</span><div class="t"><span id="lbar" style="background:var(--pool)"></span></div><span id="lnum"></span></div></div>
+  <p class="ui" id="lmsg" style="margin:8px 0 0"></p>
+</figure>
+</section>
+
+<section id="table">
+<h2 class="neu"><span class="n">10</span>Summary</h2>
+<div class="flow">
+  <div class="st enc">Encoder <span>filters find features, maps shrink; saves its maps before each shrink</span></div>
+  <div class="ar">↓</div>
+  <div class="st dec">Decoder receives 16×16, 1024 maps <span>feature-rich, spatially poor</span></div>
+  <div class="ar">↓ enlarge</div>
+  <div class="st dec">Bigger maps <span>still spatially poor</span></div>
+  <div class="ar">↓ + saved encoder maps (spatial information), combined by filters</div>
+  <div class="st dec">New maps <span>what + where</span></div>
+  <div class="ar">↓ repeat 4 times</div>
+  <div class="st dec">256×256, 64 maps</div>
+  <div class="ar">↓ 1×1 filter: 64 numbers → 1 score per location → probability</div>
+  <div class="st">Mask</div>
+</div>
+</section>
+
+</main>
+
+<script>
+(function(){
+const root=document.documentElement;
+const cv=n=>getComputedStyle(root).getPropertyValue(n).trim();
+const fmt=v=>{if(Math.abs(v)<1e-9)return"0";const r=Math.round(v);const s=Math.abs(v-r)<1e-6?String(Math.abs(r)):Math.abs(v).toFixed(Math.abs(v)<1?2:1);return(v<0?"−":"")+s;};
+function divColor(t){ // t in [-1,1]
+  const a=Math.min(1,Math.abs(t))*0.85;
+  return t>=0?`rgba(${cv('--dec-rgb')},${a})`:`rgba(${cv('--enc-rgb')},${a})`;
+}
+function grayColor(v){const g=Math.round(25+Math.max(0,Math.min(1,v))*215);return `rgb(${g},${g},${g})`;}
+function grayText(v){return v>0.5?'#111':'#EEE';}
+function textOn(alpha){return alpha>0.5?cv('--paper'):cv('--ink');}
+function mkGrid(el,rows,cols){el.innerHTML="";el.style.gridTemplateColumns=`repeat(${cols},var(--c))`;const cells=[];for(let r=0;r<rows;r++){cells.push([]);for(let c=0;c<cols;c++){const d=document.createElement('div');d.className='cell';el.appendChild(d);cells[r].push(d);}}return cells;}
+function rgbArr(name){return cv(name).split(',').map(Number);}
+
+/* ---------------- HERO DIAGRAM ---------------- */
+const svg=document.getElementById('unet');
+const LV=[{y:110,h:150,w:16,s:256,c:64},{y:232,h:110,w:22,s:128,c:128},{y:334,h:80,w:30,s:64,c:256},{y:420,h:56,w:40,s:32,c:512},{y:490,h:40,w:54,s:16,c:1024}];
+const EX=[70,150,230,310];const BX=533;
+const DX=EX.map((x,l)=>1120-x-LV[l].w);
+const D={
+ in:{t:"Input image",m:["256×256 grid","1 map (brightness)"],p:["Only brightness values. A number here tells how light or dark a pixel is. It does not tell what object the pixel belongs to."]},
+ e0:{t:"Encoder level 1",m:["256×256 grid","64 maps"],p:["64 small filters are slid over the image (two times). Each map shows where one simple thing is: an edge in one direction, a dark-to-light step, or a small spot.","These maps have full detail. A copy is sent to decoder level 1, where it is used to place the final border on the exact pixel."]},
+ e1:{t:"Encoder level 2",m:["128×128 grid","128 maps"],p:["The grid is halved. New filters are slid over the level-1 maps, so they find combinations of edges: corners, line ends and fine textures.","A copy is sent to decoder level 2."]},
+ e2:{t:"Encoder level 3",m:["64×64 grid","256 maps"],p:["Combinations of corners and textures: pieces of curved outline and small structures. One cell stands for a 4×4 block of pixels.","A copy is sent to decoder level 3."]},
+ e3:{t:"Encoder level 4",m:["32×32 grid","512 maps"],p:["Parts of shapes, such as a piece of a round border. One cell stands for an 8×8 block of pixels.","A copy is sent to decoder level 4."]},
+ b:{t:"Bottom of the U (decoder input)",m:["16×16 grid","1024 maps"],p:["Each cell stands for a 16×16 block of pixels and holds 1024 numbers. They describe what is in the block, for example 'part of a round object'.","It does not know which pixels inside the block belong to the object."]},
+ d3:{t:"Decoder level 4",m:["32×32 grid","512 maps","border exact to 8 px"],p:["Enlarges the maps from 16×16 to 32×32. Takes spatial information from the saved maps of encoder level 4. Combines both with filters into new maps."]},
+ d2:{t:"Decoder level 3",m:["64×64 grid","256 maps","border exact to 4 px"],p:["Enlarges to 64×64, takes spatial information from encoder level 3, combines both into new maps."]},
+ d1:{t:"Decoder level 2",m:["128×128 grid","128 maps","border exact to 2 px"],p:["Enlarges to 128×128, takes spatial information from encoder level 2, combines both into new maps."]},
+ d0:{t:"Decoder level 1",m:["256×256 grid","64 maps","border exact to 1 px"],p:["Enlarges to 256×256, takes the exact edges from encoder level 1, combines both into new maps.","Result: every pixel has 64 numbers that are used for the final prediction."]},
+ out:{t:"Output",m:["256×256 grid","one percentage per class"],p:["For every pixel: the chance of being object and the chance of being background. They add up to 100%."]},
+ pool:{t:"Shrink (red arrows)",m:["grid halved","nothing learned"],p:["2×2 pooling filters are used, and only the largest number of each block is kept. The grid becomes half as wide and half as tall.","The map still shows that a feature is in a block, but not where in the block."]},
+ up:{t:"Enlarge (orange arrows)",m:["grid doubled","learned"],p:["Every cell becomes a 2×2 block. The 4 new values are the old value multiplied by 4 learned weights."]},
+ skip:{t:"Skip connection (violet dashed)",m:["copy","nothing learned"],p:["Carries spatial information: the encoder's maps, saved before shrinking, go to the decoder block of the same size and are combined with the enlarged maps."]},
+ head:{t:"Final scoring (1×1 convolution)",m:["64 numbers → 1 score per location"],p:["At each location, the 64 numbers are multiplied by 64 weights and added up. The score becomes a probability, and above 50% means object."]}
+};
+let s=`<defs>`;
+[['pool',cv('--pool')],['dec',cv('--dec')],['skip',cv('--skip')],['ink',cv('--ink')]].forEach(([n,c])=>{s+=`<marker id="m-${n}" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${c}"/></marker>`});
+s+=`</defs>`;
+function arrow(key,d,color,mk,dash){return `<g class="arr" data-k="${key}" tabindex="0" role="button" aria-label="${D[key].t}"><path class="hit" d="${d}"/><path class="vis" d="${d}" fill="none" stroke="${color}" stroke-width="2" ${dash?'stroke-dasharray="6 5"':''} marker-end="url(#m-${mk})"/></g>`;}
+function block(key,x,y,w,h,fill,stroke,extra=''){return `<g class="blk" data-k="${key}" tabindex="0" role="button" aria-label="${D[key].t}"><rect class="b" x="${x}" y="${y-h/2}" width="${w}" height="${h}" rx="2" fill="${fill}" stroke="${stroke}" stroke-width="1.2"/>${extra}</g>`;}
+const enc=cv('--enc'),dec=cv('--dec'),sk=cv('--skip'),pl=cv('--pool'),ink=cv('--ink');
+// arrows first
+s+=arrow('head',`M${DX[0]+LV[0].w+2},110 H1078`,ink,'ink');
+s+=arrow('head',`M38,110 H${EX[0]-4}`,ink,'ink').replace('data-k="head"','data-k="in"');
+for(let l=0;l<3;l++){const a=LV[l],b=LV[l+1];const x1=EX[l]+a.w/2,y1=a.y+a.h/2,x2=EX[l+1]+b.w/2,y2=b.y-b.h/2-4;s+=arrow('pool',`M${x1},${y1} C${x1},${y1+34} ${x2},${y2-34} ${x2},${y2}`,pl,'pool');}
+{const a=LV[3],x1=EX[3]+a.w/2,y1=a.y+a.h/2;s+=arrow('pool',`M${x1},${y1} C${x1},${LV[4].y} ${BX-60},${LV[4].y} ${BX-4},${LV[4].y}`,pl,'pool');}
+{const a=LV[3],x2=DX[3]+a.w/2,y2=a.y+a.h/2+4;s+=arrow('up',`M${BX+LV[4].w},${LV[4].y} C${x2-60+60},${LV[4].y} ${x2},${LV[4].y} ${x2},${y2}`,dec,'dec');}
+for(let l=2;l>=0;l--){const a=LV[l+1],b=LV[l];const x1=DX[l+1]+a.w/2,y1=a.y-a.h/2,x2=DX[l]+b.w/2,y2=b.y+b.h/2+4;s+=arrow('up',`M${x1},${y1} C${x1},${y1-34} ${x2},${y2+34} ${x2},${y2}`,dec,'dec');}
+for(let l=0;l<4;l++){const a=LV[l];s+=arrow('skip',`M${EX[l]+a.w+4},${a.y} H${DX[l]-8}`,sk,'skip',true);s+=`<text class="lbl" x="${(EX[l]+a.w+DX[l])/2}" y="${a.y-7}" text-anchor="middle" style="fill:${sk}">spatial information</text>`;}
+// blocks
+s+=block('in',26,110,12,150,`rgba(${cv('--ink-rgb')},.18)`,ink);
+for(let l=0;l<4;l++){const a=LV[l];
+ s+=block('e'+l,EX[l],a.y,a.w,a.h,enc,enc);
+ s+=block('d'+l,DX[l],a.y,a.w,a.h,dec,dec,`<rect x="${DX[l]}" y="${a.y-a.h/2}" width="4" height="${a.h}" fill="${sk}" pointer-events="none"/>`);
+ if(l===0){s+=`<text class="lbl" x="${EX[l]+a.w/2}" y="${a.y+a.h/2+17}" text-anchor="middle">${a.s}×${a.s}, ${a.c} maps</text>`;s+=`<text class="lbl" x="${DX[l]-8}" y="${a.y-a.h/2+12}" text-anchor="end">${a.s}×${a.s}, ${a.c} maps</text>`;}
+ else{s+=`<text class="lbl" x="${EX[l]-7}" y="${a.y+4}" text-anchor="end">${a.s}×${a.s}, ${a.c} maps</text>`;s+=`<text class="lbl" x="${DX[l]+a.w+7}" y="${a.y+4}">${a.s}×${a.s}, ${a.c} maps</text>`;}
+}
+s+=block('b',BX,LV[4].y,LV[4].w,LV[4].h,enc,enc);
+s+=`<text class="lbl" x="${BX+27}" y="${LV[4].y+LV[4].h/2+17}" text-anchor="middle">16×16, 1024 maps</text>`;
+s+=block('out',1082,110,12,150,dec,ink);
+s+=`<text class="lbl" x="20" y="${110-75-8}">input</text><text class="lbl" x="1094" y="${110-75-8}" text-anchor="end">output</text>`;
+s+=`<text x="${EX[1]}" y="44" style="font-size:15px;font-weight:600;fill:${enc}">Encoder: learns what, loses where</text>`;
+s+=`<text x="${DX[3]+50}" y="44" text-anchor="end" style="font-size:15px;font-weight:600;fill:${dec}">Decoder: gets where back</text>`;
+s+=`<text class="lbl" x="1064" y="130" text-anchor="middle">score</text>`;
+// legend
+const lg=[[pl,'shrink by half',false],[dec,'enlarge ×2',false],[sk,'spatial info',true]];
+lg.forEach(([c,t,d],i)=>{const x=40+i*150;s+=`<line x1="${x}" y1="552" x2="${x+28}" y2="552" stroke="${c}" stroke-width="2" ${d?'stroke-dasharray="6 5"':''}/><text class="lbl" x="${x+36}" y="556">${t}</text>`});
+s+=`<rect x="500" y="546" width="12" height="12" fill="${enc}"/><text class="lbl" x="518" y="556">filters find features (encoder)</text><rect x="720" y="546" width="12" height="12" fill="${dec}"/><text class="lbl" x="738" y="556">enlarge, add spatial info, combine (decoder)</text>`;
+svg.innerHTML=s;
+const det=document.getElementById('detail');
+function show(k){const d=D[k];svg.querySelectorAll('.on').forEach(e=>e.classList.remove('on'));svg.querySelectorAll(`[data-k="${k}"]`).forEach(e=>e.classList.add('on'));
+ const TT={in:'task',e0:'conv',e1:'conv',e2:'conv',e3:'conv',b:'neck',d3:'up',d2:'skip',d1:'skip',d0:'worked',out:'head',head:'head',pool:'pool',up:'up',skip:'skip'};
+ det.innerHTML=`<h4>${d.t}</h4><div class="meta">${d.m.map(x=>`<span>${x}</span>`).join('')}</div>${d.p.map(x=>`<p>${x}</p>`).join('')}<button class="openbtn" data-go="${TT[k]}">Open the full explanation</button>`;
+ det.querySelector('.openbtn').onclick=e=>showTab(e.target.dataset.go);}
+svg.querySelectorAll('[data-k]').forEach(g=>{g.addEventListener('click',()=>show(g.dataset.k));g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();show(g.dataset.k);}});});
+show('b');
+
+/* ---------------- CONV DEMO ---------------- */
+const KER={vert:{n:'Vertical edge',w:[[-1,0,1],[-2,0,2],[-1,0,1]]},horz:{n:'Horizontal edge',w:[[-1,-2,-1],[0,0,0],[1,2,1]]},spot:{n:'Spot / corner',w:[[0,-1,0],[-1,4,-1],[0,-1,0]]},blur:{n:'Average (blur)',w:[[1/9,1/9,1/9],[1/9,1/9,1/9],[1/9,1/9,1/9]]}};
+let kcur='vert',sel=[3,2];
+const N=8;const img8=[...Array(N)].map((_,r)=>[...Array(N)].map((_,c)=>(r>=2&&r<=5&&c>=2&&c<=5)?1:0));
+img8[3][3]=1;img8[1][5]=0;
+const kb=document.getElementById('kbtns');
+Object.entries(KER).forEach(([k,v])=>{const b=document.createElement('button');b.textContent=v.n;b.dataset.k=k;b.setAttribute('aria-pressed',k===kcur);b.onclick=()=>{kcur=k;kb.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x.dataset.k===k));renderConv();renderScene();};kb.appendChild(b);});
+const cinC=mkGrid(document.getElementById('cin'),N,N),coutC=mkGrid(document.getElementById('cout'),N,N),ckC=mkGrid(document.getElementById('ck'),3,3),cpC=mkGrid(document.getElementById('cprod'),3,3);
+const reluEl=document.getElementById('relu');
+function conv8(w){const o=[];for(let i=0;i<N;i++){o.push([]);for(let j=0;j<N;j++){let s=0;for(let u=-1;u<=1;u++)for(let v=-1;v<=1;v++){const r=i+u,c=j+v;const x=(r<0||c<0||r>=N||c>=N)?0:img8[r][c];s+=w[u+1][v+1]*x;}o[i].push(s);}}return o;}
+function renderConv(){
+ const w=KER[kcur].w,relu=reluEl.checked;const raw=conv8(w);const out=raw.map(r=>r.map(v=>relu?Math.max(0,v):v));
+ let mx=1e-9;out.forEach(r=>r.forEach(v=>mx=Math.max(mx,Math.abs(v))));
+ for(let i=0;i<N;i++)for(let j=0;j<N;j++){const c=cinC[i][j];c.style.background=grayColor(img8[i][j]);c.style.color=grayText(img8[i][j]);c.textContent=fmt(img8[i][j]);c.classList.remove('hl');
+  const o=coutC[i][j];const t=out[i][j]/mx;o.style.background=divColor(t);o.style.color=textOn(Math.abs(t)*.85);o.textContent=fmt(out[i][j]);o.classList.toggle('sel',i===sel[0]&&j===sel[1]);o.tabIndex=0;
+  o.onmouseenter=o.onfocus=()=>{sel=[i,j];renderConv();};}
+ let km=0;w.forEach(r=>r.forEach(v=>km=Math.max(km,Math.abs(v))));
+ for(let a=0;a<3;a++)for(let b=0;b<3;b++){const c=ckC[a][b];c.style.background=divColor(w[a][b]/km);c.style.color=textOn(Math.abs(w[a][b]/km)*.85);c.textContent=kcur==='blur'?'1/9':fmt(w[a][b]);}
+ const [i,j]=sel;let sum=0;
+ for(let u=-1;u<=1;u++)for(let v=-1;v<=1;v++){const r=i+u,c=j+v;const inb=!(r<0||c<0||r>=N||c>=N);if(inb)cinC[r][c].classList.add('hl');const x=inb?img8[r][c]:0;const p=w[u+1][v+1]*x;sum+=p;const pc=cpC[u+1][v+1];pc.textContent=fmt(p);pc.style.background=divColor(p/km);pc.style.color=textOn(Math.abs(p/km)*.85);}
+ document.getElementById('cres').innerHTML=`Output at (row ${i}, col ${j}):<br>adding up the 9 products gives <b>${fmt(sum)}</b>${relu?(sum<0?' → ReLU turns it into <b>0</b>':''):''}<br><span class="hint">${sum>0.01?'The pixels match the filter: feature found here.':sum<-0.01?'The pixels match the opposite of the filter.':'The filter finds nothing here.'}</span>`;
+ document.getElementById('coutlab').textContent=relu?'Output feature map 8×8 (after ReLU)':'Output feature map 8×8 (raw)';
+}
+reluEl.onchange=()=>{renderConv();renderScene();};
+// scene 96
+const S=96;const scene=new Float32Array(S*S);
+for(let y=0;y<S;y++)for(let x=0;x<S;x++){let v=0.12+0.05*Math.sin(x*0.21+y*0.13);
+ if((x-30)**2+(y-32)**2<16*16)v=0.85;
+ if(x>=56&&x<86&&y>=48&&y<82)v=0.6;
+ if(x>=6&&x<40&&y>=62&&y<90)v=(Math.floor(x/3)%2)?0.7:0.2;
+ scene[y*S+x]=v;}
+function convFlat(src,W,H,w){const o=new Float32Array(W*H);for(let y=0;y<H;y++)for(let x=0;x<W;x++){let s=0;for(let u=-1;u<=1;u++)for(let v=-1;v<=1;v++){const yy=Math.min(H-1,Math.max(0,y+u)),xx=Math.min(W-1,Math.max(0,x+v));s+=w[u+1][v+1]*src[yy*W+xx];}o[y*W+x]=s;}return o;}
+function paint(canvas,arr,W,H,mode){const ctx=canvas.getContext('2d');const im=ctx.createImageData(W,H);const P=rgbArr('--paper-rgb'),I=rgbArr('--ink-rgb'),Dc=rgbArr('--dec-rgb'),E=rgbArr('--enc-rgb');
+ let mx=1e-9;if(mode!=='gray')for(const v of arr)mx=Math.max(mx,Math.abs(v));
+ for(let k=0;k<W*H;k++){let t,C;const v=arr[k];if(mode==='gray'){const g=25+Math.max(0,Math.min(1,v))*215;im.data[k*4]=g;im.data[k*4+1]=g;im.data[k*4+2]=g;im.data[k*4+3]=255;continue;}else if(mode==='prob'){t=v;C=Dc;}else{t=Math.abs(v)/mx;C=v>=0?Dc:E;}
+  im.data[k*4]=P[0]+(C[0]-P[0])*t;im.data[k*4+1]=P[1]+(C[1]-P[1])*t;im.data[k*4+2]=P[2]+(C[2]-P[2])*t;im.data[k*4+3]=255;}
+ ctx.putImageData(im,0,0);}
+function renderScene(){paint(document.getElementById('scene'),scene,S,S,'gray');let f=convFlat(scene,S,S,KER[kcur].w);if(reluEl.checked)f=f.map(v=>Math.max(0,v));paint(document.getElementById('fmap'),f,S,S,'div');
+ document.getElementById('fmaplab').textContent=`Feature map for "${KER[kcur].n}"${reluEl.checked?' after ReLU':''}`;}
+
+/* ---------------- RECEPTIVE FIELD ---------------- */
+const RF=[{n:'Level 1',rf:5,j:1,sz:'256×256 grid, 64 maps',f:'Edges, intensity steps, tiny spots.'},{n:'Level 2',rf:14,j:2,sz:'128×128 grid, 128 maps',f:'Corners, junctions, line ends, fine textures.'},{n:'Level 3',rf:32,j:4,sz:'64×64 grid, 256 maps',f:'Repeated textures, contour fragments, small structures.'},{n:'Level 4',rf:68,j:8,sz:'32×32 grid, 512 maps',f:'Object parts and shapes.'},{n:'Bottleneck',rf:140,j:16,sz:'16×16 grid, 1024 maps',f:'Whole-object and scene context: what this region is.'}];
+let rfl=2,rfp=[88,88];
+const rfb=document.getElementById('rfbtns');
+if(rfb)RF.forEach((r,i)=>{const b=document.createElement('button');b.textContent=r.n;b.setAttribute('aria-pressed',i===rfl);b.onclick=()=>{rfl=i;rfb.querySelectorAll('button').forEach((x,k)=>x.setAttribute('aria-pressed',k===i));drawRF();};rfb.appendChild(b);});
+const rfc=document.getElementById('rf');const tmp=document.createElement('canvas');tmp.width=S;tmp.height=S;
+if(rfc)rfc.addEventListener('click',e=>{const r=rfc.getBoundingClientRect();rfp=[(e.clientX-r.left)/r.width*256,(e.clientY-r.top)/r.height*256];drawRF();});
+function drawRF(){if(!rfc)return;paint(tmp,scene,S,S,'gray');const ctx=rfc.getContext('2d');ctx.imageSmoothingEnabled=false;ctx.clearRect(0,0,256,256);ctx.drawImage(tmp,0,0,256,256);
+ const L=RF[rfl];ctx.strokeStyle=`rgba(${cv('--ink-rgb')},.18)`;ctx.lineWidth=1;if(L.j>=4){for(let g=0;g<=256;g+=L.j){ctx.beginPath();ctx.moveTo(g+.5,0);ctx.lineTo(g+.5,256);ctx.stroke();ctx.beginPath();ctx.moveTo(0,g+.5);ctx.lineTo(256,g+.5);ctx.stroke();}}
+ const cx=Math.floor(rfp[0]/L.j)*L.j+L.j/2,cy=Math.floor(rfp[1]/L.j)*L.j+L.j/2;
+ ctx.fillStyle=cv('--pool');ctx.globalAlpha=.16;ctx.fillRect(cx-L.rf/2,cy-L.rf/2,L.rf,L.rf);ctx.globalAlpha=1;ctx.strokeStyle=cv('--pool');ctx.lineWidth=2;ctx.strokeRect(cx-L.rf/2,cy-L.rf/2,L.rf,L.rf);
+ ctx.fillStyle=cv('--ink');ctx.fillRect(cx-L.j/2,cy-L.j/2,Math.max(2,L.j),Math.max(2,L.j));
+ document.getElementById('rfstat').innerHTML=`<dt>Size here</dt><dd>${L.sz}</dd><dt>One cell stands for</dt><dd>${L.j}×${L.j} pixels</dd><dt>One cell has looked at</dt><dd>${L.rf}×${L.rf} pixels</dd><dt>What its maps typically find</dt><dd style="font-weight:400">${L.f}</dd>`;}
+
+/* ---------------- POOL ---------------- */
+const base=[[1,3,2,0],[4,2,1,1],[0,1,5,2],[2,3,1,4]];let fp=[0,1];
+const pinC=mkGrid(document.getElementById('pin'),4,4),poutC=mkGrid(document.getElementById('pout'),2,2);
+function renderPool(){const m=base.map(r=>r.slice());m[fp[0]][fp[1]]=9;
+ for(let i=0;i<4;i++)for(let j=0;j<4;j++){const c=pinC[i][j];c.textContent=m[i][j];c.style.background=grayColor(m[i][j]/9);c.style.color=grayText(m[i][j]/9);c.classList.add('click');c.classList.toggle('sel',i===fp[0]&&j===fp[1]);c.tabIndex=0;c.onclick=()=>{fp=[i,j];renderPool();};c.onkeydown=e=>{if(e.key==='Enter'){fp=[i,j];renderPool();}};}
+ for(let a=0;a<2;a++)for(let b=0;b<2;b++){let mx=-1;for(let u=0;u<2;u++)for(let v=0;v<2;v++)mx=Math.max(mx,m[2*a+u][2*b+v]);const c=poutC[a][b];c.textContent=mx;c.style.background=grayColor(mx/9);c.style.color=grayText(mx/9);}
+ const oa=fp[0]>>1,ob=fp[1]>>1;document.getElementById('pmsg').textContent=`The 9 lands in block (${oa}, ${ob}) of the small map. Move it to any of the other 3 cells in the same block and the small map looks exactly the same, so the network can no longer tell which cell it was in.`;}
+
+/* ---------------- UPCONV ---------------- */
+const UK={near:{n:'Copy (all ones)',w:[[1,1],[1,1]]},corner:{n:'Learned: bottom-right corner',w:[[0.1,0.4],[0.4,1]]},edge:{n:'Learned: left edge',w:[[1,0.2],[1,0.2]]}};
+let uk='near';const uin=[[2,0],[1,3]];let uh=null;
+const ub=document.getElementById('ubtns');
+Object.entries(UK).forEach(([k,v])=>{const b=document.createElement('button');b.textContent=v.n;b.dataset.k=k;b.setAttribute('aria-pressed',k===uk);b.onclick=()=>{uk=k;ub.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x.dataset.k===k));renderUp();};ub.appendChild(b);});
+const uinC=mkGrid(document.getElementById('uin'),2,2),ukC=mkGrid(document.getElementById('uk'),2,2),uoutC=mkGrid(document.getElementById('uout'),4,4);
+function renderUp(){const w=UK[uk].w;
+ for(let i=0;i<2;i++)for(let j=0;j<2;j++){const c=uinC[i][j];c.textContent=uin[i][j];c.style.background=divColor(uin[i][j]/3);c.style.color=textOn(uin[i][j]/3*.85);c.classList.add('click');c.classList.toggle('sel',uh&&uh[0]===i&&uh[1]===j);c.tabIndex=0;
+  c.onclick=()=>{uin[i][j]=(uin[i][j]+1)%4;renderUp();};c.onmouseenter=c.onfocus=()=>{uh=[i,j];renderUp();};c.onmouseleave=()=>{uh=null;renderUp();};
+  const k=ukC[i][j];k.textContent=fmt(w[i][j]);k.style.background=divColor(w[i][j]);k.style.color=textOn(w[i][j]*.85);}
+ for(let r=0;r<4;r++)for(let c=0;c<4;c++){const v=uin[r>>1][c>>1]*w[r&1][c&1];const e=uoutC[r][c];e.textContent=fmt(v);e.style.background=divColor(v/3);e.style.color=textOn(v/3*.85);e.classList.toggle('hl',!!uh&&uh[0]===(r>>1)&&uh[1]===(c>>1));}}
+
+/* ---------------- SKIP PLOT ---------------- */
+const wu=document.getElementById('wu'),ws=document.getElementById('ws'),sp=document.getElementById('splot');
+const sb=document.getElementById('sbtns');
+if(sb)[['Decoder only',1,0],['Skip only',0,1],['Both',1,1]].forEach(([n,a,b])=>{const bt=document.createElement('button');bt.textContent=n;bt.onclick=()=>{wu.value=a;ws.value=b;drawSkip();};sb.appendChild(bt);});
+const uF=x=>Math.tanh((x-0.56)/0.12);
+const sF=x=>0.9*Math.tanh((x-0.5)/0.008)+(x<0.34?1.25*Math.sin(2*Math.PI*12*x):0);
+function drawSkip(){if(!sp)return;const a=+wu.value,b=+ws.value;document.getElementById('wuv').textContent=a.toFixed(2);document.getElementById('wsv').textContent=b.toFixed(2);
+ const dpr=window.devicePixelRatio||1;const Wc=sp.clientWidth,Hc=sp.clientHeight;sp.width=Wc*dpr;sp.height=Hc*dpr;const ctx=sp.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,Wc,Hc);
+ const pad=30,ph=Hc-70;const X=x=>pad+x*(Wc-2*pad);const lim=3;const Y=v=>10+ph/2-(Math.max(-lim,Math.min(lim,v))/lim)*(ph/2);
+ ctx.fillStyle=`rgba(${cv('--ok').startsWith('#')?'47,125,79':'47,125,79'},0.08)`;ctx.fillRect(X(0.5),10,X(1)-X(0.5),ph);
+ ctx.strokeStyle=cv('--rule');ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(pad,Y(0));ctx.lineTo(Wc-pad,Y(0));ctx.stroke();
+ ctx.beginPath();ctx.moveTo(X(0.5),10);ctx.lineTo(X(0.5),10+ph);ctx.setLineDash([3,3]);ctx.stroke();ctx.setLineDash([]);
+ ctx.font=`12px ${cv('--sans')}`;ctx.fillStyle=cv('--muted');ctx.fillText('true boundary',X(0.5)+4,22);ctx.fillText('decision line',pad+2,Y(0)-4);
+ const M=500;const line=(f,col,lw,al)=>{ctx.strokeStyle=col;ctx.globalAlpha=al;ctx.lineWidth=lw;ctx.beginPath();for(let k=0;k<=M;k++){const x=k/M;const v=f(x);k?ctx.lineTo(X(x),Y(v)):ctx.moveTo(X(x),Y(v));}ctx.stroke();ctx.globalAlpha=1;};
+ line(uF,cv('--dec'),1.5,.8);line(sF,cv('--skip'),1.5,.8);const z=x=>a*uF(x)+b*sF(x);line(z,cv('--ink'),2.8,1);
+ // mask strip
+ const sy=Hc-48;ctx.fillStyle=`rgba(${cv('--ink-rgb')},.08)`;ctx.fillRect(X(0),sy,X(1)-X(0),12);ctx.fillStyle=`rgba(${cv('--ink-rgb')},.35)`;ctx.fillRect(X(0.5),sy,X(1)-X(0.5),12);
+ let tp=0,fp_=0,fn=0;const S2=1000;ctx.fillStyle=cv('--dec');for(let k=0;k<S2;k++){const x=(k+.5)/S2;const pr=z(x)>0,gt=x>0.5;if(pr&&gt)tp++;else if(pr)fp_++;else if(gt)fn++;if(pr)ctx.fillRect(X(k/S2),sy+16,(X(1)-X(0))/S2+.6,12);}
+ ctx.fillStyle=cv('--muted');ctx.fillText('true mask',pad,sy-4);ctx.fillText('predicted object',pad,sy+42);
+ const iou=tp/(tp+fp_+fn||1);let bnd=null;for(let k=450;k<700;k++){const x=k/1000;if(z(x)>0&&z(x-0.001)<=0){bnd=x;break;}}
+ document.getElementById('smsg').innerHTML=`Match with the true mask: <b>${(iou*100).toFixed(0)}%</b> · background wrongly marked as object: <b>${(fp_/10).toFixed(1)}%</b>${bnd!==null?` · predicted edge at <b>${bnd.toFixed(2)}</b> (true edge 0.50)`:''}`;}
+if(wu)wu.oninput=ws.oninput=drawSkip;
+
+/* ---------------- HEAD ---------------- */
+const G=24;const him=new Float32Array(G*G),gt=new Uint8Array(G*G);
+for(let y=0;y<G;y++)for(let x=0;x<G;x++){let v=0.2+0.04*Math.sin(x*1.7+y*2.3);if((x-7.5)**2+(y-13.5)**2<=5.2*5.2){v=0.85;gt[y*G+x]=1;}if(x>=15&&x<21&&y>=3&&y<9)v=0.85;him[y*G+x]=v;}
+function blur(src,sig){const r=Math.ceil(sig*3),k=[];let t=0;for(let i=-r;i<=r;i++){const v=Math.exp(-i*i/(2*sig*sig));k.push(v);t+=v;}const kk=k.map(v=>v/t);const a=new Float32Array(G*G),b=new Float32Array(G*G);
+ for(let y=0;y<G;y++)for(let x=0;x<G;x++){let s=0;for(let i=-r;i<=r;i++){const xx=Math.min(G-1,Math.max(0,x+i));s+=kk[i+r]*src[y*G+xx];}a[y*G+x]=s;}
+ for(let y=0;y<G;y++)for(let x=0;x<G;x++){let s=0;for(let i=-r;i<=r;i++){const yy=Math.min(G-1,Math.max(0,y+i));s+=kk[i+r]*a[yy*G+x];}b[y*G+x]=s;}return b;}
+const f1=blur(Float32Array.from(gt),2.2);let m1=0;f1.forEach(v=>m1=Math.max(m1,v));f1.forEach((v,i)=>f1[i]=v/m1);
+const f2=new Float32Array(G*G);let m2=0;for(let y=0;y<G;y++)for(let x=0;x<G;x++){const gx=him[y*G+Math.min(G-1,x+1)]-him[y*G+Math.max(0,x-1)],gy=him[Math.min(G-1,y+1)*G+x]-him[Math.max(0,y-1)*G+x];const m=Math.hypot(gx,gy);f2[y*G+x]=m;m2=Math.max(m2,m);}f2.forEach((v,i)=>f2[i]=v/m2);
+const f3=him;
+const Wfull={obj:[6,0.5,1],bo:-3.5,bg:[-2,0,0.5],bb:1},Wabl={obj:[0,0.5,5],bo:-2.5,bg:[0,0,0.5],bb:0};
+let hp=[13,7];const abl=document.getElementById('ablate');
+function headAt(k,W){const f=[f1[k],f2[k],f3[k]];const zo=W.obj[0]*f[0]+W.obj[1]*f[1]+W.obj[2]*f[2]+W.bo;const zb=W.bg[0]*f[0]+W.bg[1]*f[1]+W.bg[2]*f[2]+W.bb;const po=1/(1+Math.exp(zb-zo));return{f,zo,zb,po};}
+function renderHead(){const W=abl.checked?Wabl:Wfull;const P=new Float32Array(G*G);let correct=0;for(let k=0;k<G*G;k++){P[k]=headAt(k,W).po;if((P[k]>0.5)===!!gt[k])correct++;}
+ const cs=['h0','h1','h2','h3','h4'].map(id=>document.getElementById(id));
+ paint(cs[0],him,G,G,'gray');paint(cs[1],abl.checked?new Float32Array(G*G):f1,G,G,'prob');paint(cs[2],f2,G,G,'prob');paint(cs[3],f3,G,G,'prob');paint(cs[4],P,G,G,'prob');
+ cs.forEach(c=>{const ctx=c.getContext('2d');ctx.strokeStyle=cv('--pool');ctx.lineWidth=1;ctx.strokeRect(hp[1]+.5-1,hp[0]+.5-1,2,2);});
+ const k=hp[0]*G+hp[1];const r=headAt(k,W);const f=r.f.slice();if(abl.checked)f[0]=0;
+ const truth=gt[k]?'object':'background';const pred=r.po>0.5?'object':'background';
+ const bar=(n,v,c,t)=>`<div class="bar"><span>${n}</span><div class="t"><span style="width:${(v*100).toFixed(1)}%;background:${c}"></span></div><span>${t}</span></div>`;
+ let why;
+ if(abl.checked){why=f[2]>0.5?'Without context, only brightness is left. This pixel is bright, so it is labelled object, even if it is in the square.':'Without context, only brightness is left. This pixel is dark, so it is labelled background.';}
+ else if(f[0]>0.6)why='Context is high: this pixel is inside the round object. So the object score is much higher.';
+ else if(f[0]>0.3)why='Context is medium: this pixel is near the border of the circle. Here edge and brightness decide the answer.';
+ else if(f[2]>0.5)why='This pixel is bright, but context is 0: it is not inside a round object. So the background score is higher. This is how the square is labelled correctly.';
+ else why='Dark and context 0: background.';
+ document.getElementById('hcalc').innerHTML=`<div>Pixel (row ${hp[0]}, col ${hp[1]}) · truly <b>${truth}</b> · predicted <b style="color:${pred===truth?cv('--ok'):cv('--pool')}">${pred}</b> · correct pixels in whole image: <b>${(correct/(G*G)*100).toFixed(0)}%</b></div>
+ <div class="hint" style="margin:14px 0 2px">This pixel's numbers (3 of the 64)</div>
+ <div class="bars">${bar('Context',f[0],cv('--ink'),f[0].toFixed(2))}${bar('Edge',f[1],cv('--ink'),f[1].toFixed(2))}${bar('Brightness',f[2],cv('--ink'),f[2].toFixed(2))}</div>
+ <div class="hint" style="margin:14px 0 2px">Class scores → percentages</div>
+ <div class="bars">${bar('Object',r.po,cv('--dec'),(r.po*100).toFixed(0)+'%')}${bar('Background',1-r.po,cv('--enc'),((1-r.po)*100).toFixed(0)+'%')}</div>
+ <p style="margin:12px 0 0;font-size:.92rem">${why}</p>`;
+ // scatter
+ const sc=document.getElementById('hscatter');if(!sc)return;const dpr=window.devicePixelRatio||1;const w=sc.clientWidth;sc.width=w*dpr;sc.height=w*dpr;const ctx=sc.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);
+ const pd=14;const X=v=>pd+v*(w-2*pd),Y=v=>w-pd-v*(w-2*pd);
+ ctx.fillStyle=`rgba(${cv('--dec-rgb')},.07)`;ctx.beginPath();
+ if(abl.checked){const bx=0.5556;ctx.rect(X(bx),0,w-X(bx),w);}else{/* 8c+0.5b=4.5 -> c=(4.5-0.5b)/8 */ctx.moveTo(X(0),Y(4.5/8));ctx.lineTo(X(1),Y(4/8));ctx.lineTo(X(1),0);ctx.lineTo(X(0),0);}
+ ctx.fill();
+ ctx.strokeStyle=cv('--ink');ctx.lineWidth=1.5;ctx.beginPath();if(abl.checked){ctx.moveTo(X(.5556),0);ctx.lineTo(X(.5556),w);}else{ctx.moveTo(X(0),Y(4.5/8));ctx.lineTo(X(1),Y(4/8));}ctx.stroke();
+ for(let q=0;q<G*G;q++){const jx=(Math.sin(q*12.9898)*43758.5453%1)*0.03,jy=(Math.sin(q*78.233)*12345.678%1)*0.03;const cy=abl.checked?0.04:f1[q];ctx.fillStyle=gt[q]?cv('--dec'):cv('--enc');ctx.globalAlpha=.7;ctx.beginPath();ctx.arc(X(Math.min(1,f3[q]+jx)),Y(Math.max(0,cy+jy)),2.6,0,6.3);ctx.fill();}
+ ctx.globalAlpha=1;const cy=abl.checked?0.04:f1[k];ctx.strokeStyle=cv('--pool');ctx.lineWidth=2;ctx.beginPath();ctx.arc(X(f3[k]),Y(cy),7,0,6.3);ctx.stroke();
+ ctx.fillStyle=cv('--muted');ctx.font=`11px ${cv('--sans')}`;ctx.fillText('votes object',abl.checked?X(.58)+4:pd+4,pd+10);
+}
+document.querySelectorAll('canvas.hc').forEach(c=>c.addEventListener('click',e=>{const r=c.getBoundingClientRect();hp=[Math.min(G-1,Math.floor((e.clientY-r.top)/r.height*G)),Math.min(G-1,Math.floor((e.clientX-r.left)/r.width*G))];renderHead();}));
+document.querySelectorAll('canvas.hc').forEach(c=>c.style.cursor='crosshair');
+abl.onchange=renderHead;
+
+/* ---------------- LOSS ---------------- */
+const lp=document.getElementById('lp');
+function renderLoss(){const p=+lp.value;const L=-Math.log(p);document.getElementById('lpv').textContent=Math.round(p*100)+'%';document.getElementById('lbar').style.width=(L/4.61*100).toFixed(1)+'%';document.getElementById('lnum').textContent=L.toFixed(2);
+ document.getElementById('lmsg').textContent=p<0.2?'Very wrong: large penalty, so the weights are changed a lot.':p<0.6?'Unsure: medium penalty, so the weights are changed a little.':p<0.9?'Mostly right: small penalty, so the weights are changed very little.':'Correct and confident: almost no penalty, so almost nothing changes.';}
+lp.oninput=renderLoss;
+
+/* ---------------- TABLE ---------------- */
+const rows=[
+['e','Input','—','256×256×1','1','0'],
+['e','Enc 1','filters (×2)','256×256×64','5','37.6K'],
+['e','Pool','shrink by half','128×128×64','6','0'],
+['e','Enc 2','filters (×2)','128×128×128','14','221K'],
+['e','Pool','shrink by half','64×64×128','16','0'],
+['e','Enc 3','filters (×2)','64×64×256','32','885K'],
+['e','Pool','shrink by half','32×32×256','36','0'],
+['e','Enc 4','filters (×2)','32×32×512','68','3.54M'],
+['e','Pool','shrink by half','16×16×512','76','0'],
+['e','Bottleneck','filters (×2)','16×16×1024','140','14.16M'],
+['d','Up 4','enlarge ×2','32×32×512','—','2.10M'],
+['s','Concat','stack with Enc 4','32×32×1024','—','0'],
+['d','Dec 4','filters (×2)','32×32×512','—','7.08M'],
+['d','Up 3','enlarge ×2','64×64×256','—','524K'],
+['s','Concat','stack with Enc 3','64×64×512','—','0'],
+['d','Dec 3','filters (×2)','64×64×256','—','1.77M'],
+['d','Up 2','enlarge ×2','128×128×128','—','131K'],
+['s','Concat','stack with Enc 2','128×128×256','—','0'],
+['d','Dec 2','filters (×2)','128×128×128','—','443K'],
+['d','Up 1','enlarge ×2','256×256×64','—','32.8K'],
+['s','Concat','stack with Enc 1','256×256×128','—','0'],
+['d','Dec 1','filters (×2)','256×256×64','—','111K'],
+['d','Head','score every pixel','256×256×2','—','130'],
+];
+if(document.getElementById('tbody'))document.getElementById('tbody').innerHTML=rows.map(r=>`<tr><td class="${r[0]}">${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]}${r[4]!=='—'&&r[4]!=='0'?' px':''}</td><td>${r[5]}</td></tr>`).join('')+`<tr><td><b>Total</b></td><td></td><td></td><td></td><td><b>≈31.0M</b></td></tr>`;
+
+/* ---------------- WORKED EXAMPLE ---------------- */
+const WP=[0.2,0.8,0.2,0.9,0.9,0.9,0.9,0.9],WT=[0,0,0,1,1,1,1,1];
+const WE=WP.map((v,i)=>Math.max(0,+(v-(i?WP[i-1]:v)).toFixed(2)));
+const WD=[.25,.25,.25,.25,1,1,1,1];
+const WR=WP.map((v,i)=>+(2*WD[i]+WE[i]+WP[Math.min(7,i+1)]-1.8).toFixed(2));
+const WN=WR.map(v=>Math.max(0,v));
+const WS=WN.map(v=>+(4*v-0.5).toFixed(2));
+const WPr=WS.map(v=>1/(1+Math.exp(-v)));
+let wstep=1,wsel=3;
+const WSTEPS=[
+ ['Start: one row of 8 pixels','Pixels 4 to 8 are the object (brightness 0.9). Pixel 2 is a small bright speck (0.8). It is not part of the object. Goal: label pixels 4–8 as object and all other pixels, including the speck, as background.'],
+ ['The encoder makes full-size maps and saves them','We show two of the first level\'s 64 maps. The edge map shows how much brighter a pixel is than the pixel on its left. It is 0.7 at pixel 4 (the real start of the object) and 0.6 at pixel 2 (the speck). So the edge map has exact positions, but it marks the speck as well. The brightness map is saved too.'],
+ ['The deep path works in blocks','In the deep part of the network, the row is only 2 cells. Each cell stands for 4 pixels. Its value tells how much of the block is object. Block 1 (pixels 1–4) has 1 object pixel out of 4, so 0.25. Block 2 (pixels 5–8) is all object, so 1.0. The speck is not counted, because a single bright pixel is not an object. But the block value does not say <em>which</em> pixel of block 1 is object.'],
+ ['The decoder enlarges the map back to 8 pixels','Each block value is copied to its 4 pixels. This is the decoder map. If we used only this map (object if above 0.5), pixel 4 would be wrong: it has 0.25, the same as pixels 1–3, because all four come from block 1.'],
+ ['Stack: each pixel now has three numbers','The decoder map and the two saved maps are placed together (green outline). Compare pixel 2 and pixel 4. Decoder map: both 0.25. Edge: 0.6 and 0.7, almost equal. The difference is the next pixel: after pixel 2 comes a dark pixel (0.2), after pixel 4 comes a bright pixel (0.9).'],
+ ['Combine: one sum per pixel','For each pixel, the combining filter calculates: 2 × (decoder map) + 1 × (edge) + 1 × (brightness of the next pixel) − 1.8. The red outlines show the three numbers used for the selected pixel. Pixel 2: 0.5 + 0.6 + 0.2 − 1.8 = −0.5. Pixel 4: 0.5 + 0.7 + 0.9 − 1.8 = +0.3.'],
+ ['ReLU: negative results become 0','This gives the new decoder map. It is above 0 at exactly pixels 4–8. The speck is 0. Pixel 4 is now above 0, so the border is on the correct pixel.'],
+ ['Final answer for every pixel','The final score of each pixel is 4 × (new map value) − 0.5. The score is turned into a chance of being object: −0.5 gives 38%, +0.7 gives 67%, +3.9 gives 98%. Above 50% means object. All 8 pixels are now correct.']
+];
+function r2(v){return fmt(Math.round(v*100)/100);}
+function renderW(){
+ const g=document.getElementById('wgrid');let h='<div class="wg">';
+ const sk=cv('--skip'),dc=cv('--dec');
+ const tint=(v,rgb,max=1)=>`background:rgba(${rgb},${Math.min(1,Math.abs(v)/max)*0.45})`;
+ const skr=(()=>{const c=document.createElement('canvas').getContext('2d');c.fillStyle=sk;return c.fillStyle;})();
+ const hex2rgb=h=>{h=h.replace('#','');return [0,2,4].map(i=>parseInt(h.substr(i,2),16)).join(',');};
+ const skrgb=skr.startsWith('#')?hex2rgb(skr):'122,79,181';
+ const row=(lab,s,cells,cls='')=>{if(wstep<s)return;h+=`<div class="l ${s===wstep?'new':''}">${lab}</div>`+cells.map((c,i)=>`<div class="v ${cls} ${c.c||''} ${i===wsel?'col':''}" data-i="${i}" style="${c.st||''}">${c.t}</div>`).join('');};
+ const use=(i,r)=>wstep>=6&&i===wsel? 'use':'';
+ row('Pixel',1,WP.map((v,i)=>({t:i+1,c:'hdr'})));
+ row('Brightness',1,WP.map(v=>({t:r2(v),st:`background:${grayColor(v)};color:${grayText(v)}`})));
+ row('Truth',1,WT.map(v=>({t:v?'object':'bg',st:v?tint(1,cv('--dec-rgb'),2.2):''})));
+ row('<span class="skip-t">Saved: edge map</span>',2,WE.map((v,i)=>({t:r2(v),st:`background:rgba(${skrgb},${v*0.5})`,c:(wstep===5?'stk ':'')+use(i)})));
+ row('<span class="skip-t">Saved: brightness map</span>',2,WP.map((v,i)=>({t:r2(v),st:`background:rgba(${skrgb},${v*0.35})`,c:(wstep===5?'stk ':'')+(wstep>=6&&i===Math.min(7,wsel+1)?'use':'')})));
+ if(wstep>=3){h+=`<div class="l ${wstep===3?'new':''}"><span class="dec-t">Deep path (2 blocks)</span></div><div class="v" style="grid-column:span 4;${tint(.25,cv('--dec-rgb'))}">block 1: 0.25</div><div class="v" style="grid-column:span 4;${tint(1,cv('--dec-rgb'))}">block 2: 1.0</div>`;}
+ row('<span class="dec-t">Decoder map (enlarged)</span>',4,WD.map((v,i)=>({t:r2(v),st:tint(v,cv('--dec-rgb')),c:(wstep===5?'stk ':'')+use(i)})));
+ row('Decoder map alone says',4,WD.map((v,i)=>{const p=v>0.5?1:0;return{t:(p?'obj':'bg')+(p===WT[i]?' ✔':' ✘'),st:`color:${p===WT[i]?cv('--ok'):cv('--pool')};font-weight:600`};}));
+ row('Combining filter sum',6,WR.map(v=>({t:r2(v),st:divColor(v/1.2).replace(/^/,'background:')})));
+ row('<span class="dec-t">After ReLU (new map)</span>',7,WN.map(v=>({t:r2(v),st:tint(v,cv('--dec-rgb'),1.1)})));
+ row('Final score',8,WS.map(v=>({t:r2(v)})));
+ row('Chance of object',8,WPr.map(v=>({t:Math.round(v*100)+'%',st:tint(v,cv('--dec-rgb'))})));
+ row('Answer',8,WPr.map((v,i)=>{const p=v>0.5?1:0;return{t:(p?'obj':'bg')+(p===WT[i]?' ✔':' ✘'),st:`color:${p===WT[i]?cv('--ok'):cv('--pool')};font-weight:600`};}));
+ h+='</div>';g.innerHTML=h;
+ g.querySelectorAll('.v[data-i]').forEach(e=>e.onclick=()=>{wsel=+e.dataset.i;renderW();});
+ document.getElementById('wct').textContent=`Step ${wstep} of 8`;
+ document.getElementById('wtitle').textContent=WSTEPS[wstep-1][0];
+ document.getElementById('wtext').innerHTML=WSTEPS[wstep-1][1];
+ document.getElementById('wbk').disabled=wstep===1;document.getElementById('wnx').disabled=wstep===8;
+ const i=wsel,n=Math.min(7,i+1);let c=`<b>Pixel ${i+1}</b>: brightness ${r2(WP[i])}, truly ${WT[i]?'object':'background'}.`;
+ if(wstep>=2)c+=` Saved edge ${r2(WE[i])}.`;
+ if(wstep>=4)c+=` Decoder map ${r2(WD[i])}.`;
+ if(wstep>=6)c+=`<div class="trace" style="margin-top:8px;padding:10px 14px;background:var(--panel);border-left:3px solid var(--pool);border-radius:0 8px 8px 0;line-height:1.9">
+ 2 × ${r2(WD[i])} <span class="hint">(decoder map here)</span> + 1 × ${r2(WE[i])} <span class="hint">(edge here)</span> + 1 × ${r2(WP[n])} <span class="hint">(brightness of pixel ${n+1}${n===i?', edge of row repeats':''})</span> − 1.8 = <b>${r2(WR[i])}</b>`+
+ (wstep>=7?`<br>ReLU: ${r2(WR[i])} → <b>${r2(WN[i])}</b>`:'')+
+ (wstep>=8?`<br>Final score: 4 × ${r2(WN[i])} − 0.5 = <b>${r2(WS[i])}</b> → chance of object <b>${Math.round(WPr[i]*100)}%</b> → <b>${WPr[i]>0.5?'object':'background'}</b> ${(WPr[i]>0.5)==!!WT[i]?'✔':'✘'}`:'')+`</div>`;
+ document.getElementById('wcalc').innerHTML=c;}
+document.getElementById('wbk').onclick=()=>{if(wstep>1){wstep--;renderW();}};
+document.getElementById('wnx').onclick=()=>{if(wstep<8){wstep++;renderW();}};
+
+function renderNeck(){const a=document.getElementById('n0'),b=document.getElementById('n1');if(!a)return;paint(a,Float32Array.from(gt),G,G,'prob');
+ const m=new Float32Array(G*G);for(let by=0;by<G;by+=4)for(let bx=0;bx<G;bx+=4){let c=0;for(let y=0;y<4;y++)for(let x=0;x<4;x++)c+=gt[(by+y)*G+bx+x];const v=c>=8?1:0;for(let y=0;y<4;y++)for(let x=0;x<4;x++)m[(by+y)*G+bx+x]=v;}paint(b,m,G,G,'prob');}
+function renderTask(){renderNeck();paint(document.getElementById('t0'),him,G,G,'gray');paint(document.getElementById('t1'),Float32Array.from(gt),G,G,'prob');}
+function sheets(id,x0,y0,n,cols,kind){let o='';for(let i=0;i<n;i++){const x=x0+i*7,y=y0+i*6,c=cols[i%cols.length];o+=`<rect x="${x}" y="${y}" width="80" height="54" rx="3" style="fill:var(--panel);stroke:${c}" stroke-width="1.5"/>`;const k=kind==='mix'?(i%2?'sharp':'blur'):kind;const cx=x+40,cy=y+27;
+ if(k==='sharp')o+=`<circle cx="${cx}" cy="${cy}" r="15" fill="none" style="stroke:var(--skip)" stroke-width="2"/><path d="M${x+8},${y+44} l6,-6 m4,4 l6,-6 m4,4 l6,-6" style="stroke:var(--skip)" stroke-width="1.2" opacity=".6"/>`;
+ else if(k==='blur'){for(let r=24;r>=6;r-=6)o+=`<circle cx="${cx+3}" cy="${cy+2}" r="${r}" style="fill:var(--dec)" opacity=".13"/>`;}
+ else o+=`<circle cx="${cx}" cy="${cy}" r="15" style="fill:var(--dec)"/>`;}
+ document.getElementById(id).innerHTML=o;}
+sheets('stackU',25,42,4,['var(--dec)'],'blur');sheets('stackS',25,120,4,['var(--skip)'],'sharp');sheets('stackZ',270,52,8,['var(--dec)','var(--skip)'],'mix');sheets('stackO',590,70,4,['var(--dec)'],'solid');
+
+/* ---------------- TABS ---------------- */
+const TABS=[...document.querySelectorAll('.tabbar button')].map(b=>b.dataset.t);
+function showTab(k,scroll=true){if(!TABS.includes(k))k='overview';
+ document.querySelectorAll('main>section').forEach(sec=>{sec.hidden=sec.id!==k;});
+ document.querySelectorAll('.tabbar button').forEach(b=>{const on=b.dataset.t===k;b.setAttribute('aria-selected',on);if(on){const bar=b.parentElement;bar.scrollLeft=Math.max(0,b.offsetLeft-bar.offsetLeft-40);}});
+ try{history.replaceState(null,'','#'+k);}catch(e){}
+ if(k==='worked'||k==='skip')drawSkip(); if(k==='head')renderHead();
+ if(scroll){const bar=document.querySelector('.tabbar');window.scrollTo({top:Math.max(0,bar.offsetTop-8)});}}
+document.querySelectorAll('.tabbar button').forEach(b=>b.onclick=()=>showTab(b.dataset.t));
+document.querySelectorAll('main>section').forEach((sec,i)=>{const pg=document.createElement('div');pg.className='pager';
+ const prev=TABS[i-1],next=TABS[i+1];const lab=k=>document.querySelector(`.tabbar button[data-t="${k}"]`).textContent;
+ pg.innerHTML=(prev?`<button data-go="${prev}">Back: ${lab(prev)}</button>`:'<span></span>')+(next?`<button data-go="${next}">Next: ${lab(next)}</button>`:'');
+ pg.querySelectorAll('button').forEach(b=>b.onclick=()=>showTab(b.dataset.go));sec.appendChild(pg);});
+
+function all(){renderTask();renderW();renderConv();renderScene();drawRF();renderPool();renderUp();drawSkip();renderHead();renderLoss();}
+all();
+{const h0=(location.hash||'#overview').slice(1);showTab(h0,false);requestAnimationFrame(()=>window.scrollTo(0,0));}
+window.addEventListener('resize',()=>{drawSkip();renderHead();});
+try{window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>location.reload());}catch(e){}
+})();
+</script>
+</body>
+</html>
